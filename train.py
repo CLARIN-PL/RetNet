@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from transformers import (Trainer, TrainingArguments, AutoTokenizer, HfArgumentParser,
                           DataCollatorForLanguageModeling)
 from datasets import load_dataset
-
+from transformers import HerbertTokenizer
 from retnet.modeling_retnet import RetNetForCausalLM
 from retnet.configuration_retnet import load_config_from_json
 
@@ -11,9 +11,10 @@ from retnet.configuration_retnet import load_config_from_json
 @dataclass
 class MyArgs:
     model_size: str = '300m'
-    dataset_name: str = 'sst2'
-    text_col: str = 'sentence'
-    max_length: int = 256
+    dataset_name: str = 'clarin-pl/polemo2-official'
+    text_col: str = 'text'
+    max_length: int = 16384
+    tokenizer: str = 'flax-community/papuGaPT2'
 
 
 def main():
@@ -26,8 +27,8 @@ def main():
     config = load_config_from_json(f"configs/retnet-{args.model_size}/config.json")
     model = RetNetForCausalLM(config)
 
-    tokenizer = AutoTokenizer.from_pretrained('gpt2')
-    tokenizer.model_max_length = 16384
+
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.unk_token = tokenizer.eos_token
     tokenizer.bos_token = tokenizer.eos_token
