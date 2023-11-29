@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import sys
 
 from transformers import (Trainer, TrainingArguments, AutoTokenizer, HfArgumentParser,
                           DataCollatorForLanguageModeling)
@@ -11,7 +12,6 @@ from retnet.configuration_retnet import load_config_from_json
 @dataclass
 class MyArgs:
     model_size: str = '300m'
-    dataset_name: str = 'clarin-pl/polemo2-official'
     text_col: str = 'text'
     max_length: int = 16384
     tokenizer: str = 'flax-community/papuGaPT2'
@@ -21,8 +21,12 @@ def main():
     parser = HfArgumentParser((TrainingArguments, MyArgs))
     train_args, args = parser.parse_args_into_dataclasses()
 
-    train_dataset = load_dataset(args.dataset_name, split="train")
-    eval_dataset = load_dataset(args.dataset_name, split="validation")
+    dataset = load_dataset('oscar', 'unshuffled_deduplicated_pl', split="train")
+    # sample 10% of the entire corpus
+    dataset = dataset.train_test_split(test_size=0.1)["test"].train_test_split(test_size=0.1)
+    train_dataset = dataset["train"]
+    eval_dataset = dataset["test"]
+    # eval_dataset = load_dataset('oscar', 'unshuffled_deduplicated_pl', split="validation")
 
     config = load_config_from_json(f"configs/retnet-{args.model_size}/config.json")
     model = RetNetForCausalLM(config)
