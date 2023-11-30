@@ -4,10 +4,10 @@ import os
 from typing import Union
 import time
 
+import typer
+
 from transformers import (
-    TrainingArguments,
     AutoTokenizer,
-    HfArgumentParser,
     DataCollatorForLanguageModeling,
 )
 from datasets import load_dataset
@@ -21,43 +21,52 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 
 
-@dataclass
-class MyArgs:
-    devices: int
-    num_nodes: int
-    # sample 10% of the entire corpus
-    dataset_sample: float = 0.1
-    test_size: float = 0.1
-    check_val_every_n_epochs: int = 10
-    model_size: str = "300m"
-    text_col: str = "text"
-    max_length: int = 16384
-    tokenizer: str = "flax-community/papuGaPT2"
+DEFUALT_MODEL = "300m"
+DEFAULT_MAX_LENGTH = 2048
+DEFAULT_TOKENIZER = "flax-community/papuGaPT2"
+DEFAULT_BATCH_SIZE = 16
+DEFAULT_LR = 6e-4
+DEFAULT_WEIGHT_DECAY = 0.01
+DEFAULT_MAX_STEPS = 20000
 
 
-def main():
-    parser = HfArgumentParser((TrainingArguments, MyArgs))
-    train_args, args = parser.parse_args_into_dataclasses()
+def main(
+    devices: int = typer.Option(...),
+    num_nodes: int = typer.Option(...),
+    output_dir: str = typer.Option(...),
+    accelerator: str = typer.Option("gpu"),
+    dataset_sample: float = typer.Option(0.1),
+    test_size: float = typer.Option(0.1),
+    check_val_every_n_epochs: int = typer.Option(10),
+    model_size: str = typer.Option(DEFUALT_MODEL),
+    text_col: str = typer.Option("text"),
+    max_length: int = typer.Option(DEFAULT_MAX_LENGTH),
+    tokenizer: str = typer.Option(DEFAULT_TOKENIZER),
+    batch_size: int = typer.Option(DEFAULT_BATCH_SIZE),
+    learning_rate: float = typer.Option(DEFAULT_LR),
+    weight_decay: float = typer.Option(DEFAULT_WEIGHT_DECAY),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS),
+):
     dataset = load_dataset("oscar", "unshuffled_deduplicated_pl", split="train")
 
-    dataset = dataset.train_test_split(test_size=args.dataset_sample)[
+    dataset = dataset.train_test_split(test_size=dataset_sample)[
         "test"
-    ].train_test_split(test_size=args.test_size)
+    ].train_test_split(test_size=test_size)
     train_dataset = dataset["train"]
     eval_dataset = dataset["test"]
 
-    config = load_config_from_json(f"configs/retnet-{args.model_size}/config.json")
+    config = load_config_from_json(f"configs/retnet-{model_size}/config.json")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.unk_token = tokenizer.eos_token
     tokenizer.bos_token = tokenizer.eos_token
 
     def tokenize_datset(example):
         input_ids = tokenizer(
-            example[args.text_col],
+            example[text_col],
             truncation=True,
-            max_length=args.max_length,
+            max_length=max_length,
             return_tensors="pt",
         ).input_ids[0]
         return {"input_ids": input_ids}
@@ -71,33 +80,36 @@ def main():
 
     train_dataloader = DataLoader(
         train_dataset,
-        batch_size=train_args.per_device_train_batch_size,
+        batch_size=batch_size,
         collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
     )
     eval_dataloader = DataLoader(
         eval_dataset,
-        batch_size=train_args.per_device_eval_batch_size,
+        batch_size=batch_size,
         collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
     )
 
-    model = LanguageModelingModule(config, train_args)
+    model = LanguageModelingModule(
+        config,
+        train_args=dict(learning_rate=learning_rate, weight_decay=weight_decay),
+    )
 
     loggers = [
-        CSVLogger(save_dir=train_args.output_dir),
-        TensorBoardLogger(save_dir=train_args.output_dir, default_hp_metric=False)
+        CSVLogger(save_dir=output_dir),
+        TensorBoardLogger(save_dir=output_dir, default_hp_metric=False),
     ]
-    
+
     trainer = pl.Trainer(
-        default_root_dir=train_args.output_dir,
+        default_root_dir=output_dir,
         logger=loggers,
-        check_val_every_n_epoch=args.check_val_every_n_epochs,
-        max_steps=train_args.max_steps,
-        accelerator="gpu",
-        devices=args.devices,
+        check_val_every_n_epoch=check_val_every_n_epochs,
+        max_steps=max_steps,
+        accelerator=accelerator,
+        devices=devices,
         strategy="ddp",
-        num_nodes=args.num_nodes,
+        num_nodes=num_nodes,
     )
-    
+
     start = time.time()
     trainer.fit(
         model,
@@ -113,11 +125,12 @@ def main():
     with open(os.path.join(trainer.log_dir, "results.json"), "w") as file:
         json.dump(results, file, indent="\t")
 
+
 class LanguageModelingModule(pl.LightningModule):
-    def __init__(self, config, train_args):
+    def __init__(self, retnet_config, train_args):
         super().__init__()
         self.train_args = train_args
-        self.model = RetNetForCausalLM(config)
+        self.model = RetNetForCausalLM(retnet_config)
 
     def forward(self, batch) -> tuple:
         output = self.model(**batch)
@@ -135,8 +148,8 @@ class LanguageModelingModule(pl.LightningModule):
     def configure_optimizers(self) -> dict:
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=self.train_args.learning_rate,
-            weight_decay=self.train_args.weight_decay,
+            lr=self.train_args["learning_rate"],
+            weight_decay=self.train_args["weight_decay"],
         )
         num_training_steps, num_warmup_steps = self.compute_warmup(
             num_training_steps=-1,
@@ -173,4 +186,4 @@ class LanguageModelingModule(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
