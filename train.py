@@ -18,7 +18,7 @@ from torch import Tensor
 import torch
 import transformers
 from torch.utils.data import DataLoader
-from pytorch_lightning.loggers import CSVLogger
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 
 
 @dataclass
@@ -82,10 +82,14 @@ def main():
 
     model = LanguageModelingModule(config, train_args)
 
-    logger = CSVLogger(save_dir=train_args.output_dir)
+    loggers = [
+        CSVLogger(save_dir=train_args.output_dir),
+        TensorBoardLogger(save_dir=train_args.output_dir, default_hp_metric=False)
+    ]
+    
     trainer = pl.Trainer(
         default_root_dir=train_args.output_dir,
-        logger=logger,
+        logger=loggers,
         check_val_every_n_epoch=args.check_val_every_n_epochs,
         max_steps=train_args.max_steps,
         accelerator="gpu",
