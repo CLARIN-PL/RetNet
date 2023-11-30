@@ -22,13 +22,13 @@ from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 
 
 DEFUALT_MODEL = "300m"
-DEFAULT_MAX_LENGTH = 2048
+DEFAULT_MAX_LENGTH = 4096
 DEFAULT_TOKENIZER = "flax-community/papuGaPT2"
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_LR = 6e-4
 DEFAULT_WEIGHT_DECAY = 0.01
 DEFAULT_MAX_STEPS = 20000
-
+DEFAULT_NUM_WORKERS = 4
 
 def main(
     devices: int = typer.Option(...),
@@ -46,6 +46,7 @@ def main(
     learning_rate: float = typer.Option(DEFAULT_LR),
     weight_decay: float = typer.Option(DEFAULT_WEIGHT_DECAY),
     max_steps: int = typer.Option(DEFAULT_MAX_STEPS),
+    num_workers: int = typer.Option(DEFAULT_NUM_WORKERS),
 ):
     dataset = load_dataset("oscar", "unshuffled_deduplicated_pl", split="train")
 
@@ -82,11 +83,14 @@ def main(
         train_dataset,
         batch_size=batch_size,
         collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        num_workers=num_workers,
     )
+
     eval_dataloader = DataLoader(
         eval_dataset,
         batch_size=batch_size,
         collate_fn=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        num_workers=num_workers,
     )
 
     model = LanguageModelingModule(
