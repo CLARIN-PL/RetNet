@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+import json
+import os
 from typing import Union
-
+import time
 
 from transformers import (
     TrainingArguments,
@@ -26,6 +28,7 @@ class MyArgs:
     # sample 10% of the entire corpus
     dataset_sample: float = 0.1
     test_size: float = 0.1
+    check_val_every_n_epochs: int = 10
     model_size: str = "300m"
     text_col: str = "text"
     max_length: int = 16384
@@ -83,24 +86,32 @@ def main():
     trainer = pl.Trainer(
         default_root_dir=train_args.output_dir,
         logger=logger,
+        check_val_every_n_epoch=args.check_val_every_n_epochs,
         max_steps=train_args.max_steps,
         accelerator="gpu",
         devices=args.devices,
         strategy="ddp",
         num_nodes=args.num_nodes,
     )
-
+    
+    start = time.time()
     trainer.fit(
         model,
         train_dataloaders=train_dataloader,
         val_dataloaders=eval_dataloader,
     )
+    end = time.time()
 
+    results = {
+        "elapsed_seconds": end - start,
+    }
+
+    with open(os.path.join(trainer.log_dir, "results.json"), "w") as file:
+        json.dump(results, file, indent="\t")
 
 class LanguageModelingModule(pl.LightningModule):
     def __init__(self, config, train_args):
         super().__init__()
-        self.save_hyperparameters()
         self.train_args = train_args
         self.model = RetNetForCausalLM(config)
 
