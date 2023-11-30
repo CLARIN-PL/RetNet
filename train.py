@@ -1,8 +1,8 @@
-from dataclasses import dataclass
 import json
 import os
-from typing import Union
+from typing import Optional, Union
 import time
+from lightning_fabric import seed_everything
 
 import typer
 
@@ -18,8 +18,8 @@ from torch import Tensor
 import torch
 import transformers
 from torch.utils.data import DataLoader
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
-
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 DEFUALT_MODEL = "300m"
 DEFAULT_MAX_LENGTH = 4096
@@ -27,8 +27,13 @@ DEFAULT_TOKENIZER = "flax-community/papuGaPT2"
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_LR = 6e-4
 DEFAULT_WEIGHT_DECAY = 0.01
-DEFAULT_MAX_STEPS = 20000
+DEFAULT_MAX_STEPS = 200_000
 DEFAULT_NUM_WORKERS = 4
+DEFAULT_CHECKPOINT_STEPS = 1_000
+DEFAULT_CHECK_VAL_EVERY_N_STEPS = 1_000
+
+
+os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
 
 def main(
     devices: int = typer.Option(...),
@@ -37,7 +42,7 @@ def main(
     accelerator: str = typer.Option("gpu"),
     dataset_sample: float = typer.Option(0.1),
     test_size: float = typer.Option(0.1),
-    check_val_every_n_epochs: int = typer.Option(10),
+    check_val_every_n_steps: int = typer.Option(DEFAULT_CHECK_VAL_EVERY_N_STEPS),
     model_size: str = typer.Option(DEFUALT_MODEL),
     text_col: str = typer.Option("text"),
     max_length: int = typer.Option(DEFAULT_MAX_LENGTH),
@@ -47,9 +52,11 @@ def main(
     weight_decay: float = typer.Option(DEFAULT_WEIGHT_DECAY),
     max_steps: int = typer.Option(DEFAULT_MAX_STEPS),
     num_workers: int = typer.Option(DEFAULT_NUM_WORKERS),
+    max_time: Optional[str] = typer.Option(None),
+    checkpoint_every_n_steps: int = typer.Option(DEFAULT_CHECKPOINT_STEPS),
 ):
+    seed_everything(7312)
     dataset = load_dataset("oscar", "unshuffled_deduplicated_pl", split="train")
-
     dataset = dataset.train_test_split(test_size=dataset_sample)[
         "test"
     ].train_test_split(test_size=test_size)
@@ -98,20 +105,31 @@ def main(
         train_args=dict(learning_rate=learning_rate, weight_decay=weight_decay),
     )
 
-    loggers = [
-        CSVLogger(save_dir=output_dir),
-        TensorBoardLogger(save_dir=output_dir, default_hp_metric=False),
+    loggers = TensorBoardLogger(save_dir=output_dir, default_hp_metric=False)
+
+    callbacks = [
+        ModelCheckpoint(
+            filename="{epoch}-{step}-{val_loss:.3f}",
+            every_n_train_steps=checkpoint_every_n_steps,
+            save_last=True,
+            save_top_k=5,
+            monitor="val_loss",
+            mode="min",
+        ),
     ]
 
     trainer = pl.Trainer(
         default_root_dir=output_dir,
         logger=loggers,
-        check_val_every_n_epoch=check_val_every_n_epochs,
+        callbacks=callbacks,
+        val_check_interval=check_val_every_n_steps,
         max_steps=max_steps,
+        max_time=max_time,
         accelerator=accelerator,
         devices=devices,
         strategy="ddp",
         num_nodes=num_nodes,
+        num_sanity_val_steps=0,
     )
 
     start = time.time()
@@ -142,12 +160,12 @@ class LanguageModelingModule(pl.LightningModule):
 
     def training_step(self, batch: dict, batch_idx: int) -> Tensor:
         loss, _ = self.forward(batch)
-        self.log("train/loss", loss, prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch: dict, batch_idx: int) -> None:
         loss, _ = self.forward(batch)
-        self.log("val/loss", loss, prog_bar=True)
+        self.log("val_loss", loss, prog_bar=True)
 
     def configure_optimizers(self) -> dict:
         optimizer = torch.optim.AdamW(
