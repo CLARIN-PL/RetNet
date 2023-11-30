@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Union
 
 
 from transformers import (
@@ -145,7 +146,7 @@ class LanguageModelingModule(pl.LightningModule):
         return self.trainer.estimated_stepping_batches
 
     def compute_warmup(
-        self, num_training_steps: int, num_warmup_steps: int | float
+        self, num_training_steps: int, num_warmup_steps: Union[int, float]
     ) -> tuple[int, int]:
         if num_training_steps < 0:
             # less than 0 specifies to infer number of training steps
