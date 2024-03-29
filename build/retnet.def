@@ -1,0 +1,9 @@
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:23.12-py3
+
+%files 
+    ../requirements.txt 
+
+%post
+    pip install -r requirements.txt
+    pip install datasets timm pytorch-lightning

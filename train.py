@@ -36,24 +36,24 @@ DEFAULT_CHECK_VAL_EVERY_N_STEPS = 1_000
 os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
 
 def main(
-    devices: int = typer.Option(...),
-    num_nodes: int = typer.Option(...),
-    output_dir: str = typer.Option(...),
-    accelerator: str = typer.Option("gpu"),
-    dataset_sample: float = typer.Option(0.1),
-    test_size: float = typer.Option(0.1),
-    check_val_every_n_steps: int = typer.Option(DEFAULT_CHECK_VAL_EVERY_N_STEPS),
     model_size: str = typer.Option(DEFUALT_MODEL),
-    text_col: str = typer.Option("text"),
-    max_length: int = typer.Option(DEFAULT_MAX_LENGTH),
-    tokenizer: str = typer.Option(DEFAULT_TOKENIZER),
     batch_size: int = typer.Option(DEFAULT_BATCH_SIZE),
     learning_rate: float = typer.Option(DEFAULT_LR),
     weight_decay: float = typer.Option(DEFAULT_WEIGHT_DECAY),
-    max_steps: int = typer.Option(DEFAULT_MAX_STEPS),
+    dataset_sample: float = typer.Option(0.1),
+    test_size: float = typer.Option(0.1),
+    text_col: str = typer.Option("text"),
+    max_length: int = typer.Option(DEFAULT_MAX_LENGTH),
+    tokenizer: str = typer.Option(DEFAULT_TOKENIZER),
     num_workers: int = typer.Option(DEFAULT_NUM_WORKERS),
-    max_time: Optional[str] = typer.Option(None),
+    check_val_every_n_steps: int = typer.Option(DEFAULT_CHECK_VAL_EVERY_N_STEPS),
     checkpoint_every_n_steps: int = typer.Option(DEFAULT_CHECKPOINT_STEPS),
+    max_time: Optional[str] = typer.Option(None),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS),
+    output_dir: str = typer.Option(...),
+    devices: int = typer.Option(...),
+    num_nodes: int = typer.Option(...),
+    accelerator: str = typer.Option("cuda"),
 ):
     seed_everything(7312)
     dataset = load_dataset("oscar", "unshuffled_deduplicated_pl", split="train")
