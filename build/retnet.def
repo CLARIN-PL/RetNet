@@ -6,4 +6,4 @@ From: nvcr.io/nvidia/pytorch:23.12-py3
 
 %post
     pip install -r requirements.txt
-    pip install datasets timm pytorch-lightning
+    mkdir /exp_run

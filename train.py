@@ -18,7 +18,7 @@ from torch import Tensor
 import torch
 import transformers
 from torch.utils.data import DataLoader
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 DEFUALT_MODEL = "300m"
@@ -33,7 +33,8 @@ DEFAULT_CHECKPOINT_STEPS = 1_000
 DEFAULT_CHECK_VAL_EVERY_N_STEPS = 1_000
 
 
-os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
+
 
 def main(
     model_size: str = typer.Option(DEFUALT_MODEL),
@@ -54,12 +55,13 @@ def main(
     devices: int = typer.Option(...),
     num_nodes: int = typer.Option(...),
     accelerator: str = typer.Option("cuda"),
+    wandb_project: Optional[str] = typer.Option(None),
 ):
     seed_everything(7312)
     dataset = load_dataset("oscar", "unshuffled_deduplicated_pl", split="train")
-    dataset = dataset.train_test_split(test_size=dataset_sample)[
-        "test"
-    ].train_test_split(test_size=test_size)
+    dataset = dataset.train_test_split(test_size=dataset_sample)["test"].train_test_split(
+        test_size=test_size
+    )
     train_dataset = dataset["train"]
     eval_dataset = dataset["test"]
 
@@ -79,12 +81,8 @@ def main(
         ).input_ids[0]
         return {"input_ids": input_ids}
 
-    train_dataset = train_dataset.map(
-        tokenize_datset, remove_columns=train_dataset.column_names
-    )
-    eval_dataset = eval_dataset.map(
-        tokenize_datset, remove_columns=eval_dataset.column_names
-    )
+    train_dataset = train_dataset.map(tokenize_datset, remove_columns=train_dataset.column_names)
+    eval_dataset = eval_dataset.map(tokenize_datset, remove_columns=eval_dataset.column_names)
 
     train_dataloader = DataLoader(
         train_dataset,
@@ -105,7 +103,16 @@ def main(
         train_args=dict(learning_rate=learning_rate, weight_decay=weight_decay),
     )
 
-    loggers = TensorBoardLogger(save_dir=output_dir, default_hp_metric=False)
+    loggers = [TensorBoardLogger(save_dir=output_dir, default_hp_metric=False)]
+
+    if wandb_project:
+        loggers.append(
+            WandLogger(
+                project=wandb_project,
+                save_dir=output_dir,
+                log_model=False,
+            )
+        )
 
     callbacks = [
         ModelCheckpoint(
